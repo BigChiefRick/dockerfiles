@@ -1,7 +1,7 @@
 on:
   push
   pull_request:
-    name: make test
+  name: make test
 jobs:
   test:
     name: make test
