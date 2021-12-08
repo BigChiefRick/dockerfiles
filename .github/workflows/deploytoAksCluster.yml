@@ -1,0 +1,63 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    
+    - uses: actions/checkout@master
+    
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Create ACR
+      id: create-acr
+      run: |
+        az acr create -n rsmith -g rsmithbff8-rg --location "South Central US" --sku Standard --admin-enabled
+        echo "::set-output name=acr_username::`az acr credential show -n rsmith --query username | xargs`"
+        echo "::set-output name=acr_password::`az acr credential show -n rsmith --query passwords[0].value | xargs`"
+        echo "::add-mask::`az acr credential show -n rsmith --query passwords[0].value | xargs`"
+
+    - uses: azure/docker-login@v1
+      with:
+        login-server: rsmith.azurecr.io
+        username: ${{ steps.create-acr.outputs.acr_username }}
+        password: ${{ steps.create-acr.outputs.acr_password }}
+
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/firefox" -f  "firefox/Dockerfile" -t rsmith.azurecr.io/rsmithdev:${{ github.sha }} --label dockerfile-path=firefox/Dockerfile
+        docker push rsmith.azurecr.io/rsmithdev:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      id: login
+      with:
+         kubeconfig: ${{ secrets.aks_rsmithdev_kubeConfig }}
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep default | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace default`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: default
+        container-registry-url: rsmith.azurecr.io
+        container-registry-username: ${{ steps.create-acr.outputs.acr_username }}
+        container-registry-password: ${{ steps.create-acr.outputs.acr_password }}
+        secret-name: rsmithdevdockerauth
+       
+    - uses: azure/k8s-deploy@v1.2
+      with:
+        namespace: default
+        manifests: |
+          manifests/deployment.yml
+          manifests/service.yml
+        images: |
+          rsmith.azurecr.io/rsmithdev:${{ github.sha }}
+        imagepullsecrets: |
+          rsmithdevdockerauth   
