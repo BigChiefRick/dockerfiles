@@ -1,0 +1,19 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: "rsmithdev-ead8"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: "rsmithdev-ead8"
+  template:
+    metadata:
+      labels:
+        app: "rsmithdev-ead8"
+    spec:
+      containers:
+        - name: "rsmithdev-ead8"
+          image: "rsmith.azurecr.io/rsmithdev"
+          ports:
+          - containerPort: 80
